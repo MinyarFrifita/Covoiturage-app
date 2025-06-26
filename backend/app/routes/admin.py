@@ -38,6 +38,7 @@ def delete_user(user_id: int, current_user=Depends(get_current_user), db: Sessio
     if not db_user:
         raise HTTPException(status_code=404, detail="User not found")
     
+    
     # Trouver dynamiquement l'admin_user_id avec validation stricte
     admin_user = db.query(UserModel).filter(UserModel.email == "admin@gmail.com").first()
     if not admin_user:
