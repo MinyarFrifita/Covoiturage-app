@@ -1,0 +1,91 @@
+import React, { useState } from 'react';
+import axios from 'axios';
+
+const Register = () => {
+  const [formData, setFormData] = useState({
+    username: '',
+    email: '',
+    full_name: '',
+    password: '',
+    role: 'driver',
+  });
+  const [error, setError] = useState(null);
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData((prevData) => ({ ...prevData, [name]: value }));
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await axios.post('http://192.168.1.x:8000/auth/register', formData, {
+        headers: { 'Content-Type': 'application/json' },
+      });
+      alert('Registration successful! Please log in.');
+      window.location.href = '/login';
+    } catch (error) {
+      console.error('Registration failed:', error.response?.data || error.message);
+      setError('Registration failed: ' + (error.response?.data?.detail || 'Check your input'));
+    }
+  };
+
+  return (
+    <div className="max-w-md mx-auto mt-10">
+      <h2 className="text-2xl font-bold mb-4">Register</h2>
+      {error && <p className="text-red-500 mb-4">{error}</p>}
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <input
+          type="text"
+          name="username"
+          value={formData.username}
+          onChange={handleChange}
+          placeholder="Username"
+          className="w-full p-2 border rounded"
+          required
+        />
+        <input
+          type="email"
+          name="email"
+          value={formData.email}
+          onChange={handleChange}
+          placeholder="Email"
+          className="w-full p-2 border rounded"
+          required
+        />
+        <input
+          type="text"
+          name="full_name"
+          value={formData.full_name}
+          onChange={handleChange}
+          placeholder="Full Name"
+          className="w-full p-2 border rounded"
+          required
+        />
+        <input
+          type="password"
+          name="password"
+          value={formData.password}
+          onChange={handleChange}
+          placeholder="Password"
+          className="w-full p-2 border rounded"
+          required
+        />
+        <select
+          name="role"
+          value={formData.role}
+          onChange={handleChange}
+          className="w-full p-2 border rounded"
+        >
+          <option value="driver">Driver</option>
+          <option value="passenger">Passenger</option>
+        </select>
+        <button type="submit" className="w-full bg-blue-500 text-white p-2 rounded">
+          Register
+        </button>
+      </form>
+    </div>
+  );
+};
+
+export default Register;
