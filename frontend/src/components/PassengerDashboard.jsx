@@ -1,15 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
 import api from '../services/api';
-import BookingForm from '../components/BookingForm';
 import bg from '../assets/Background.png';
 
 function PassengerDashboard({ token, onLogout }) {
   const [trips, setTrips] = useState([]);
   const [error, setError] = useState(null);
-  const [searchCity, setSearchCity] = useState('');
+  const [searchDeparture, setSearchDeparture] = useState('');
+  const [searchDestination, setSearchDestination] = useState('');
   const [searchDate, setSearchDate] = useState('');
-  const [selectedTrip, setSelectedTrip] = useState(null); // Nouvel état pour le trajet sélectionné
 
   useEffect(() => {
     fetchTrips();
@@ -26,100 +24,139 @@ function PassengerDashboard({ token, onLogout }) {
       });
       setTrips(response.data);
     } catch (err) {
-      setError('Failed to fetch trips: ' + err.response?.data?.detail || err.message);
-      console.error('Fetch error:', err);
+      setError('Failed to fetch trips: ' + (err.response?.data?.detail || err.message));
     }
   };
 
   const filteredTrips = trips.filter((trip) => {
-    const matchesCity = searchCity
-      ? trip.departure_city.toLowerCase().includes(searchCity.toLowerCase())
+    const matchesDeparture = searchDeparture
+      ? trip.departure_city.toLowerCase().includes(searchDeparture.toLowerCase())
       : true;
+
+    const matchesDestination = searchDestination
+      ? trip.destination.toLowerCase().includes(searchDestination.toLowerCase())
+      : true;
+
     const matchesDate = searchDate
       ? new Date(trip.date_time).toISOString().split('T')[0] === searchDate
       : true;
-    return matchesCity && matchesDate;
+
+    return matchesDeparture && matchesDestination && matchesDate;
   });
+
+  const handleBookTrip = async (tripId) => {
+    try {
+      await api.post(`/trips/${tripId}/book`, {}, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      fetchTrips();
+      alert('Trip booked successfully!');
+    } catch (err) {
+      setError('Failed to book trip: ' + (err.response?.data?.detail || err.message));
+    }
+  };
 
   return (
     <div
       className="h-screen w-screen bg-cover bg-center bg-no-repeat bg-fixed flex flex-col"
-      style={{
-        backgroundImage: `url(${bg})`,
-      }}
-      onError={(e) => {
-        console.error('Background image failed to load:', e);
-        e.target.style.backgroundImage = "url('https://via.placeholder.com/1920x1080')";
-      }}
+      style={{ backgroundImage: `url(${bg})` }}
     >
-      {/* Overlay semi-transparent */}
       <div className="flex-1 bg-black bg-opacity-50 flex items-center justify-center p-4 overflow-auto">
-        <div className="bg-white p-8 rounded-lg shadow-lg w-full max-w-md">
-          <h2 className="text-2xl font-bold mb-4">Passenger Dashboard</h2>
-          {error && <p className="text-red-500 mb-4">{error}</p>}
+        <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-5xl">
+          <h2 className="text-2xl font-bold mb-6 text-center">Available Trips</h2>
 
-          {/* Champs de recherche */}
-          <div className="mb-4">
+          {/* Search Inputs */}
+          <div className="flex flex-col md:flex-row justify-between gap-4 mb-6">
             <input
               type="text"
-              placeholder="Search by departure city..."
-              value={searchCity}
-              onChange={(e) => setSearchCity(e.target.value)}
-              className="border p-2 mr-2 rounded"
+              placeholder="Departure city..."
+              className="border p-2 rounded w-full"
+              value={searchDeparture}
+              onChange={(e) => setSearchDeparture(e.target.value)}
+            />
+            <input
+              type="text"
+              placeholder="Destination city..."
+              className="border p-2 rounded w-full"
+              value={searchDestination}
+              onChange={(e) => setSearchDestination(e.target.value)}
             />
             <input
               type="date"
+              className="border p-2 rounded w-full"
               value={searchDate}
               onChange={(e) => setSearchDate(e.target.value)}
-              className="border p-2 rounded"
             />
           </div>
 
-          <h3 className="text-xl font-bold mb-2">Available Trips</h3>
-          {filteredTrips.length === 0 ? (
-            <p>No trips available or matching your search.</p>
-          ) : (
-            <>
-              <select
-                value={selectedTrip ? selectedTrip.id : ''}
-                onChange={(e) => {
-                  const trip = filteredTrips.find((t) => t.id === parseInt(e.target.value));
-                  setSelectedTrip(trip);
-                }}
-                className="w-full p-2 border rounded mb-4"
-              >
-                <option value="" disabled>Select a trip</option>
-                {filteredTrips.map((trip) => (
-                  <option key={trip.id} value={trip.id}>
-                    {`${trip.departure_city} to ${trip.destination} - ${new Date(trip.date_time).toLocaleString()} (${trip.available_seats} seats)`}
-                  </option>
-                ))}
-              </select>
-
-              {selectedTrip && selectedTrip.available_seats > 0 && (
-                <BookingForm trip={selectedTrip} token={token} onBook={fetchTrips} />
-              )}
-            </>
-          )}
-          
+          {/* Trips Table */}
+          <div className="overflow-x-auto">
+            <table className="min-w-full bg-white">
+              <thead>
+                <tr className="bg-gray-100">
+                  <th className="py-3 px-4 border">From</th>
+                  <th className="py-3 px-4 border">To</th>
+                  <th className="py-3 px-4 border">Date & Time</th>
+                  <th className="py-3 px-4 border">Seats</th>
+                  <th className="py-3 px-4 border">Driver</th>
+                  <th className="py-3 px-4 border">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredTrips.length === 0 ? (
+                  <tr>
+                    <td colSpan="6" className="py-4 text-center">
+                      No trips available or matching your search
+                    </td>
+                  </tr>
+                ) : (
+                  filteredTrips.map((trip) => (
+                    <tr key={trip.id} className="hover:bg-gray-50">
+                      <td className="py-2 px-4 border">{trip.departure_city}</td>
+                      <td className="py-2 px-4 border">{trip.destination}</td>
+                      <td className="py-2 px-4 border">
+                        {new Date(trip.date_time).toLocaleString()}
+                      </td>
+                      <td className="py-2 px-4 border">{trip.available_seats}</td>
+                      <td className="py-2 px-4 border">
+                        {trip.driver_email || trip.driver?.email || 'Unknown'}
+                      </td>
+                      <td className="py-2 px-4 border">
+                        <button
+                          onClick={() => handleBookTrip(trip.id)}
+                          disabled={trip.available_seats <= 0}
+                          className={`px-3 py-1 rounded ${
+                            trip.available_seats > 0
+                              ? 'bg-green-500 text-white hover:bg-green-600'
+                              : 'bg-gray-300 cursor-not-allowed'
+                          }`}
+                        >
+                          {trip.available_seats > 0 ? 'Book Now' : 'Full'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
-      {/* Navigation fixe en bas */}
-      <nav className="bg-blue-600 p-4 text-white fixed bottom-0 w-full">
-        <ul className="flex flex-wrap justify-center gap-4">
-          <li><button onClick={onLogout} className="text-blue-500 hover:underline px-3 py-1">
-              Home
-            </button></li>
-          <li>
-            <button onClick={onLogout} className="text-blue-500 hover:underline px-3 py-1">
-              Logout
-            </button>
-          </li>
-        </ul>
+      {/* Footer */}
+      <nav className="bg-blue-600 p-4 text-white">
+        <div className="container mx-auto flex justify-center">
+          <button
+            onClick={onLogout}
+            className="bg-white text-blue-600 px-6 py-2 rounded-lg hover:bg-blue-50 transition"
+          >
+            Logout
+          </button>
+        </div>
       </nav>
     </div>
   );
 }
 
 export default PassengerDashboard;
+
