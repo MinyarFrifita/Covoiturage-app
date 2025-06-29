@@ -1,78 +1,163 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
+import bg from '/home/Minyar/covoiturage-app/frontend/src/assets/Background.png'; 
 
 function Register({ setToken, setUserRole }) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [role, setRole] = useState('passenger');
+  const [formData, setFormData] = useState({
+    email: '',
+    password: '',
+    role: 'passenger'
+  });
   const [error, setError] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
-    try {
+    setIsLoading(true);
 
-      const registerResponse = await api.post('/auth/register', { email, password, role }, {
+    try {
+      // 1. Registration
+      await api.post('/auth/register', {
+        email: formData.email,
+        password: formData.password,
+        role: formData.role
+      }, {
         headers: { 'Content-Type': 'application/json' },
       });
-      console.log('Register response:', registerResponse.data);
 
-      const tokenResponse = await api.post('/auth/token', { username: email, password }, {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      });
+      // 2. Login after registration
+      const tokenResponse = await api.post('/auth/token', 
+        `username=${encodeURIComponent(formData.email)}&password=${encodeURIComponent(formData.password)}`,
+        {
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        }
+      );
+
       const accessToken = tokenResponse.data.access_token;
-      localStorage.setItem('token', accessToken);
-
+      
+      // 3. Get user role
       const userRoleResponse = await api.get('/auth/me', {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
-      const confirmedRole = userRoleResponse.data.role;
-      localStorage.setItem('role', confirmedRole);
+
+      // Save to state and storage
+      localStorage.setItem('token', accessToken);
+      localStorage.setItem('role', userRoleResponse.data.role);
       setToken(accessToken);
-      setUserRole(confirmedRole);
+      setUserRole(userRoleResponse.data.role);
 
       navigate('/');
     } catch (err) {
-      const errorMessage = err.response?.data?.detail || err.message || 'Registration or login failed.';
+      const errorMessage = err.response?.data?.detail || 
+                         err.response?.data?.message || 
+                         err.message || 
+                         'Registration failed. Please try again.';
       setError(errorMessage);
-      console.error('Error:', err);
+      console.error('Registration error:', err);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   return (
-    <div className="max-w-md mx-auto mt-10">
-      <h2 className="text-2xl font-bold mb-4">Register</h2>
-      {error && <p className="text-red-500 mb-4">{error}</p>}
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <input
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="Email"
-          className="w-full p-2 border rounded"
-          required
-        />
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="Password"
-          className="w-full p-2 border rounded"
-          required
-        />
-        <select
-          value={role}
-          onChange={(e) => setRole(e.target.value)}
-          className="w-full p-2 border rounded"
-        >
-          <option value="passenger">Passenger</option>
-          <option value="driver">Driver</option>
-          <option value="admin">Admin</option>
-        </select>
-        <button type="submit" className="w-full bg-blue-600 text-white p-2 rounded">Register</button>
-      </form>
+    <div
+      className="h-screen w-screen bg-cover bg-center bg-no-repeat bg-fixed flex flex-col"
+      style={{ backgroundImage: `url(${bg})` }}
+    >
+      {/* Overlay semi-transparent */}
+      <div className="flex-1 bg-black bg-opacity-50 flex items-center justify-center p-4">
+        <div className="bg-white p-8 rounded-lg shadow-lg w-full max-w-md">
+          <h2 className="text-2xl font-bold text-gray-800 mb-6">Create Account</h2>
+          
+          {error && (
+            <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-md">
+              {error}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label htmlFor="email" className="block text-gray-700 text-sm font-medium mb-1">
+                Email Address
+              </label>
+              <input
+                id="email"
+                name="email"
+                type="email"
+                value={formData.email}
+                onChange={handleChange}
+                placeholder="your@email.com"
+                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                required
+                autoComplete="email"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="password" className="block text-gray-700 text-sm font-medium mb-1">
+                Password
+              </label>
+              <input
+                id="password"
+                name="password"
+                type="password"
+                value={formData.password}
+                onChange={handleChange}
+                placeholder="••••••••"
+                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                required
+                minLength="6"
+                autoComplete="new-password"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="role" className="block text-gray-700 text-sm font-medium mb-1">
+                Account Type
+              </label>
+              <select
+                id="role"
+                name="role"
+                value={formData.role}
+                onChange={handleChange}
+                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="passenger">Passenger</option>
+                <option value="driver">Driver</option>
+                <option value="admin">Admin</option>
+              </select>
+            </div>
+
+            <button
+              type="submit"
+              disabled={isLoading}
+              className={`w-full py-2 px-4 rounded-md text-white font-medium ${
+                isLoading ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
+              }`}
+            >
+              {isLoading ? 'Creating account...' : 'Register'}
+            </button>
+          </form>
+
+          <div className="mt-4 text-center text-sm text-gray-600">
+            Already have an account?{' '}
+            <a href="/login" className="text-blue-600 hover:underline">
+              Login here
+            </a>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

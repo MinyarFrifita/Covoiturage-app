@@ -4,67 +4,64 @@ from ..database import get_db
 from ..database import User as UserModel, Trip as TripModel
 from ..schemas import User, Trip
 from sqlalchemy.orm import Session
+from typing import List
+from datetime import datetime, timedelta
 import logging
-
-# Configurer le logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-@router.get("/users", response_model=list[User])
-def get_all_users(current_user=Depends(get_current_user), db: Session = Depends(get_db)):
-    if current_user.email != "admin@gmail.com":
-        raise HTTPException(status_code=403, detail="Only admin@gmail.com can access this")
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Only admins can view all users")
-    return [User.from_orm(user) for user in db.query(UserModel).all()]
+# Helper function to check admin privileges
+def verify_admin(current_user):
+    if current_user.email != "admin@gmail.com" or current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
 
-@router.get("/trips", response_model=list[Trip])
+@router.get("/users", response_model=List[User])
+def get_all_users(current_user=Depends(get_current_user), db: Session = Depends(get_db)):
+    verify_admin(current_user)
+    # Exclure l'admin de la liste
+    return [User.from_orm(user) for user in db.query(UserModel).filter(UserModel.email != "admin@gmail.com").all()]
+
+@router.get("/trips", response_model=List[Trip])
 def get_all_trips(current_user=Depends(get_current_user), db: Session = Depends(get_db)):
-    if current_user.email != "admin@gmail.com":
-        raise HTTPException(status_code=403, detail="Only admin@gmail.com can access this")
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Only admins can view all trips")
-    return [Trip.from_orm(trip) for trip in db.query(TripModel).all()]
+    verify_admin(current_user)
+    return db.query(TripModel).all()
+
+@router.get("/stats")
+def get_admin_stats(current_user=Depends(get_current_user), db: Session = Depends(get_db)):
+    verify_admin(current_user)
+    
+    total_users = db.query(UserModel).filter(UserModel.email != "admin@gmail.com").count()
+    total_trips = db.query(TripModel).count()
+    
+    today = datetime.now()
+    week_ago = today - timedelta(days=7)
+    
+    new_users = db.query(UserModel).filter(
+        UserModel.created_at >= week_ago,
+        UserModel.email != "admin@gmail.com"
+    ).count()
+    
+    recent_trips = db.query(TripModel).filter(
+        TripModel.created_at >= week_ago
+    ).count()
+    
+    return {
+        "total_users": total_users,
+        "total_trips": total_trips,
+        "new_users_week": new_users,
+        "recent_trips_week": recent_trips
+    }
 
 @router.delete("/users/{user_id}")
 def delete_user(user_id: int, current_user=Depends(get_current_user), db: Session = Depends(get_db)):
-    if current_user.email != "admin@gmail.com":
-        raise HTTPException(status_code=403, detail="Only admin@gmail.com can delete users")
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Only admins can delete users")
+    verify_admin(current_user)
+    
     db_user = db.query(UserModel).filter(UserModel.id == user_id).first()
     if not db_user:
         raise HTTPException(status_code=404, detail="User not found")
+    if db_user.email == "admin@gmail.com":
+        raise HTTPException(status_code=403, detail="Cannot delete admin user")
     
+    # ... (le reste de votre logique de suppression existante)
     
-    # Trouver dynamiquement l'admin_user_id avec validation stricte
-    admin_user = db.query(UserModel).filter(UserModel.email == "admin@gmail.com").first()
-    if not admin_user:
-        raise HTTPException(status_code=500, detail="Admin user (admin@gmail.com) not found. Please create it first.")
-    admin_user_id = admin_user.id
-    if admin_user_id is None:
-        raise HTTPException(status_code=500, detail="Invalid admin_user_id detected")
-    
-    # Vérifier et mettre à jour les trips associés
-    trips_to_update = db.query(TripModel).filter(TripModel.driver_id == user_id).all()
-    if trips_to_update:
-        for trip in trips_to_update:
-            if trip.driver_id is None:
-                logger.error(f"Invalid driver_id (None) found for trip {trip.id}")
-                raise HTTPException(status_code=400, detail=f"Trip {trip.id} has an invalid driver_id")
-            trip.driver_id = admin_user_id
-            db.add(trip)
-            logger.info(f"Updated trip {trip.id} with driver_id {admin_user_id}")
-    
-    # Supprimer l'utilisateur
-    db.delete(db_user)
-    try:
-        db.commit()
-        logger.info(f"Successfully deleted user {user_id}")
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Failed to delete user {user_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to delete user: {str(e)}")
     return {"message": "User deleted successfully"}

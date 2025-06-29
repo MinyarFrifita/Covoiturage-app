@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import api from '../services/api';
-
+import bg from '/home/Minyar/covoiturage-app/frontend/src/assets/Background.png'; 
 function TripCard({ trip, token, onUpdate }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editedTrip, setEditedTrip] = useState({ ...trip });
@@ -80,7 +80,7 @@ function TripCard({ trip, token, onUpdate }) {
   }
 
   return (
-    <div className="border p-4 mb-2">
+<div className="border p-4 mb-2 text-white text-xl font-bold">
       <p>From: {trip.departure_city} to {trip.destination}</p>
       <p>Date: {new Date(trip.date_time).toLocaleString()}</p>
       <p>Seats: {trip.available_seats} - Price: {trip.price}dt</p>

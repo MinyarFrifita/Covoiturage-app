@@ -5,19 +5,21 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      // Proxy toutes les requêtes /api vers le backend
+      // Proxy toutes les requêtes /api et /auth vers le backend
       '/api': {
-        target: 'http://localhost:8000',  // URL de votre backend FastAPI
+        target: 'http://localhost:8000', // URL de ton backend FastAPI
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ''),
-        secure: false
+        rewrite: (path) => path.replace(/^\/api/, ''), // Supprime /api du chemin
+        secure: false,
       },
-      // Proxy spécifique pour les endpoints d'authentification
       '/auth': {
-        target: 'http://localhost:8000',
+        target: 'http://localhost:8000', // Même backend
         changeOrigin: true,
-        secure: false
-      }
-    }
-  }
+        rewrite: (path) => path.replace(/^\/auth/, ''), // Supprime /auth du chemin
+        secure: false,
+      },
+    },
+  },
+  // Ajout pour inclure les assets (images, etc.)
+  assetsInclude: ['**/*.jpg', '**/*.png', '**/*.jpeg'],
 });

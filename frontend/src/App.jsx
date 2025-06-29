@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+
 import Login from './components/Login';
 import DriverDashboard from './components/DriverDashboard';
 import PassengerDashboard from './components/PassengerDashboard';
@@ -8,6 +9,22 @@ import NotFound from './components/NotFound';
 import Register from './components/Register';
 import AdminDashboard from './components/AdminDashboard';
 import api from './services/api';
+
+// Error Boundary Component
+class ErrorBoundary extends React.Component {
+  state = { hasError: false };
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return <h1 className="text-white text-center">Something went wrong. Please try again later.</h1>;
+    }
+    return this.props.children;
+  }
+}
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('token'));
@@ -20,6 +37,7 @@ function App() {
       setToken(storedToken);
       setUserRole(storedRole);
     }
+    console.log('App component mounted with token:', storedToken);
   }, []);
 
   const handleLogout = () => {
@@ -41,7 +59,7 @@ function App() {
 
   return (
     <Router>
-      <div className="min-h-screen bg-gray-100">
+      <ErrorBoundary>
         <Routes>
           <Route
             path="/"
@@ -83,9 +101,10 @@ function App() {
           />
           <Route path="*" element={<NotFound />} />
         </Routes>
-      </div>
+      </ErrorBoundary>
     </Router>
   );
 }
 
 export default App;
+

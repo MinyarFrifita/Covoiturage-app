@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import api from '../services/api';
+import bg from '/home/Minyar/covoiturage-app/frontend/src/assets/Background.png'; 
 
 function BookingForm({ trip, token, onBook }) {
   const [error, setError] = useState(null);

@@ -26,7 +26,7 @@ def init_db():
 init_db()
 
 app.include_router(auth_router, prefix="/auth", tags=["auth"])
-app.include_router(admin_router, prefix="/admin", tags=["admin"])  # Ajout
+app.include_router(admin_router, prefix="/admin", tags=["admin"])  
 app.include_router(trips_router, prefix="/trips", tags=["trips"])
 
 @app.get("/")
