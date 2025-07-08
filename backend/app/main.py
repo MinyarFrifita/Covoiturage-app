@@ -11,10 +11,14 @@ from app.routes.trips import router as trips_router
 from app.routes.trip_requests import router as trip_requests_router
 from app.routes.notifications import router as notifications_router
 from app.routes.feedback import router as feedback_router
-from app.auth import create_access_token  # Importé mais potentiellement utilisé ailleurs
+from app.auth import create_access_token  
 from datetime import timedelta
 import os
 import logging
+from dotenv import load_dotenv
+
+# Charger les variables d'environnement
+load_dotenv()
 
 # Initialisation de l'application FastAPI
 app = FastAPI()
@@ -23,14 +27,18 @@ app = FastAPI()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Configuration de SendGrid
-SENDGRID_API_KEY = "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"  
-SG_CLIENT = SendGridAPIClient(SENDGRID_API_KEY)
+# Configuration SendGrid (sécurisée via variables d'environnement)
+SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
+if not SENDGRID_API_KEY:
+    logger.warning("SendGrid API key not found in environment variables")
+    SG_CLIENT = None
+else:
+    SG_CLIENT = SendGridAPIClient(SENDGRID_API_KEY)
 
 # Middleware CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # Ajuste selon ton frontend
+    allow_origins=["http://localhost:5173"], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
