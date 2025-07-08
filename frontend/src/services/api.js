@@ -5,7 +5,9 @@ const api = axios.create({
   timeout: 10000,
 });
 
-// Interceptor pour ajouter le token uniquement si nécessaire
+// Liste des endpoints publics (ne nécessitant pas de token)
+const publicEndpoints = ['/auth/register', '/auth/token'];
+
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');
@@ -14,16 +16,14 @@ api.interceptors.request.use(
       console.log(`Added Authorization header with token: ${token.substring(0, 10)}... for ${config.url}`);
     } else {
       console.log(`No token found in localStorage for ${config.url}`);
-    }
-    if (!['/auth/register', '/auth/token'].includes(config.url)) {
-      if (!token) {
+      if (!publicEndpoints.includes(config.url)) {
         console.warn(`Request to ${config.url} requires authentication but no token available`);
       }
     }
     return config;
   },
   (error) => {
-    console.error('Request interceptor error:', error);
+    console.error('Request interceptor error:', error.message || error);
     return Promise.reject(error);
   }
 );

@@ -1,60 +1,33 @@
 import React, { useState } from 'react';
 import api from '../services/api';
-import bg from '/home/Minyar/covoiturage-app/frontend/src/assets/Background.png'; 
 
 function BookingForm({ trip, token, onBook }) {
   const [error, setError] = useState(null);
   const [bookingDetails, setBookingDetails] = useState({
     seats: 1,
-    paymentStatus: 'pending',
   });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
+    if (bookingDetails.seats > trip.available_seats) {
+      setError(`Only ${trip.available_seats} seat(s) available.`);
+      return;
+    }
     try {
-     // Placeholder pour l'API Konnect - Remplace par l'endpoint et les données spécifiques de Konnect
-   const paymentResponse = await api.post(
-  'https://dev.konnect.network/api/payment/sessions', // Endpoint à confirmer avec la doc Konnect
-  {
-    receiverWalletId: '5f7a209aeb3f76490ac4a3d1', // Remplace par ton wallet ID Konnect
-    token: 'TND',
-    amount: trip.price * bookingDetails.seats * 1000, // Convertir en centimes (ex. 10 TND = 10000)
-    type: 'immediate',
-    description: `Réservation pour trajet ${trip.departure_city} -> ${trip.destination}`,
-    acceptedPaymentMethods: ['wallet', 'bank_card', 'e-DINAR'],
-    lifespan: 10,
-    checkoutForm: true,
-    addPaymentFeesToAmount: true,
-    firstName: 'John', // Remplace par current_user.firstName si disponible
-    lastName: 'Doe',   // Remplace par current_user.lastName si disponible
-    phoneNumber: '22777777', // Remplace par current_user.phone si disponible
-    email: 'john.doe@gmail.com', // Remplace par current_user.email si disponible
-    orderId: trip.id.toString(),
-    webhook: 'https://your-backend.com/api/webhook', // Remplace par ton URL de webhook
-    theme: 'dark',
-  },
-  {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      // Ajoute le jeton API Konnect si requis (ex. 'X-API-Key: 6137ad140c181c5eb44a7f88:Rp2dpHPb0mBpj3_51s86zzp3PXs5w1')
-    },
-  }
-);
-
-const payUrl = paymentResponse.data.payUrl;
-if (payUrl) {
-  window.location.href = payUrl; // Redirige vers la page de paiement Konnect
-} else {
-  setError('No payment URL received from Konnect.');
-}
-      if (response.data.success) {
-        onBook(); 
-        alert('Booking and payment successful with Konnect!');
-      } else {
-        setError('Payment failed with Konnect.');
-      }
+      const response = await api.post(`/trips/${trip.id}/book`, new URLSearchParams({
+        seats_booked: bookingDetails.seats,
+      }).toString(), {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+      });
+      console.log('Booking response:', response.data);
+      onBook();
+      alert('Trip booked successfully!');
     } catch (err) {
+      console.error('Booking failed:', err.response?.data || err.message);
       setError('Booking failed: ' + (err.response?.data?.detail || err.message));
     }
   };
@@ -69,12 +42,12 @@ if (payUrl) {
           min="1"
           max={trip.available_seats}
           value={bookingDetails.seats}
-          onChange={(e) => setBookingDetails({ ...bookingDetails, seats: parseInt(e.target.value) })}
+          onChange={(e) => setBookingDetails({ ...bookingDetails, seats: parseInt(e.target.value) || 1 })}
           placeholder="Number of seats"
           className="w-full p-2 border rounded"
           required
         />
-        <button type="submit" className="w-full bg-blue-600 text-white p-2 rounded">
+        <button type="submit" className="w-full bg-blue-600 text-white p-2 rounded" disabled={trip.available_seats === 0}>
           Book Now
         </button>
       </form>

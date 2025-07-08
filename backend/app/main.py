@@ -1,34 +1,69 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from app.database import Base, engine, get_db
-from app.routes.auth import router as auth_router  
-from app.routes.admin import router as admin_router  
+from fastapi.staticfiles import StaticFiles
+from sqlalchemy.orm import Session
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Email, To, Content, Mail
+from app.database import Base, engine, get_db, User
+from app.routes.auth import router as auth_router
+from app.routes.admin import router as admin_router
 from app.routes.trips import router as trips_router
+from app.routes.trip_requests import router as trip_requests_router
+from app.routes.notifications import router as notifications_router
+from app.routes.feedback import router as feedback_router
+from app.auth import create_access_token  # Importé mais potentiellement utilisé ailleurs
+from datetime import timedelta
 import os
+import logging
 
+# Initialisation de l'application FastAPI
 app = FastAPI()
 
+# Configuration du logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Configuration de SendGrid
+SENDGRID_API_KEY = "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"  
+SG_CLIENT = SendGridAPIClient(SENDGRID_API_KEY)
+
+# Middleware CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["http://localhost:5173"],  # Ajuste selon ton frontend
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# Monter le répertoire des fichiers statiques
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
+# Initialisation de la base de données
 def init_db():
     try:
         Base.metadata.create_all(bind=engine)
-        print("Database tables created successfully.")
+        logger.info("Database tables created successfully.")
     except Exception as e:
-        print(f"Error creating database tables: {e}")
-        raise
+        logger.error(f"Error creating database tables: {e}")
+        raise HTTPException(status_code=500, detail=f"Database initialization failed: {e}")
+
+# Appeler init_db au démarrage
 init_db()
 
-app.include_router(auth_router, prefix="/auth", tags=["auth"])
-app.include_router(admin_router, prefix="/admin", tags=["admin"])  
-app.include_router(trips_router, prefix="/trips", tags=["trips"])
+# Inclusion des routeurs
+app.include_router(auth_router)
+app.include_router(admin_router)
+app.include_router(trips_router)
+app.include_router(trip_requests_router)
+app.include_router(notifications_router)
+app.include_router(feedback_router)
 
+# Route racine
 @app.get("/")
 def read_root():
     return {"message": "Welcome to Covoiturage API"}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)

@@ -9,6 +9,7 @@ import NotFound from './components/NotFound';
 import Register from './components/Register';
 import AdminDashboard from './components/AdminDashboard';
 import api from './services/api';
+import bg from '/home/Minyar/covoiturage-app/frontend/src/assets/Background.png';
 
 // Error Boundary Component
 class ErrorBoundary extends React.Component {
@@ -40,6 +41,33 @@ function App() {
     console.log('App component mounted with token:', storedToken);
   }, []);
 
+  // Supprimé fetchNewToken car /generate-token n'existe plus
+  // La gestion de l'authentification est maintenant gérée par Login et Register
+
+  // Vérifie si le token est expiré (logique informative, sans rafraîchissement automatique)
+  useEffect(() => {
+    if (token) {
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1])); // Décodage simple du payload JWT
+        const exp = payload.exp * 1000; // Convertir en millisecondes
+        if (exp < Date.now()) {
+          console.log('Token expired, please log in again');
+          // Ne pas tenter de rafraîchir ici, rediriger vers login si nécessaire
+          localStorage.removeItem('token');
+          localStorage.removeItem('role');
+          setToken(null);
+          setUserRole(null);
+        }
+      } catch (error) {
+        console.error('Error decoding token:', error);
+        localStorage.removeItem('token');
+        localStorage.removeItem('role');
+        setToken(null);
+        setUserRole(null);
+      }
+    }
+  }, [token]);
+
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('role');
@@ -63,9 +91,7 @@ function App() {
         <Routes>
           <Route
             path="/"
-            element={
-              <Home token={token} userRole={userRole} onLogout={handleLogout} />
-            }
+            element={<Home token={token} userRole={userRole} onLogout={handleLogout} />}
           />
           <Route
             path="/login"
@@ -107,4 +133,3 @@ function App() {
 }
 
 export default App;
-
