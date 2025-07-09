@@ -4,6 +4,7 @@ import bg from '../assets/Background.png';
 
 function PassengerDashboard({ token, onLogout }) {
   const [trips, setTrips] = useState([]);
+  const [myTrips, setMyTrips] = useState([]);
   const [error, setError] = useState(null);
   const [searchDeparture, setSearchDeparture] = useState('');
   const [searchDestination, setSearchDestination] = useState('');
@@ -23,6 +24,7 @@ function PassengerDashboard({ token, onLogout }) {
 
   useEffect(() => {
     fetchTrips();
+    fetchMyTrips();
     fetchNotifications();
   }, [token]);
 
@@ -35,10 +37,26 @@ function PassengerDashboard({ token, onLogout }) {
       const response = await api.get(`/trips/?t=${new Date().getTime()}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      console.log('Fetched trips data:', response.data); // Débogage
+      console.log('Fetched trips data:', response.data);
       setTrips(response.data);
     } catch (err) {
       setError('Failed to fetch trips: ' + (err.response?.data?.detail || err.message));
+    }
+  };
+
+  const fetchMyTrips = async () => {
+    try {
+      if (!token) {
+        setError('No authentication token available.');
+        return;
+      }
+      const response = await api.get('/trips/booked', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      console.log('Fetched my trips:', response.data);
+      setMyTrips(response.data);
+    } catch (err) {
+      setError('Failed to fetch my trips: ' + (err.response?.data?.detail || err.message));
     }
   };
 
@@ -51,15 +69,44 @@ function PassengerDashboard({ token, onLogout }) {
       const response = await api.get('/notifications/', {
         headers: { Authorization: `Bearer ${token}` },
       });
-      console.log('Fetched notifications:', response.data); // Débogage
+      console.log('Fetched notifications:', response.data);
       setNotifications(response.data);
     } catch (err) {
       setError('Failed to fetch notifications: ' + (err.response?.data?.detail || err.message));
     }
   };
 
+  const sendNotification = async (tripId, message) => {
+    try {
+      if (!token) {
+        setError('No authentication token available.');
+        return;
+      }
+      const userId = JSON.parse(atob(token.split('.')[1])).sub;
+      if (!tripId) {
+        setError('Trip ID is required for notification.');
+        return;
+      }
+      console.log('Sending notification with userId:', userId, 'message:', message, 'tripId:', tripId);
+      const response = await api.post(
+        '/notifications/',
+        {
+          passenger_id: userId,
+          message: message || 'New update regarding your trip',
+          trip_id: tripId,
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      console.log('Notification sent:', response.data);
+      fetchNotifications();
+    } catch (err) {
+      setError('Failed to send notification: ' + (err.response?.data?.detail || err.message));
+      console.error('Notification error:', err.response?.data);
+    }
+  };
+
   const filteredTrips = trips.filter((trip) => {
-    const currentDate = new Date('2025-07-08T11:00:00+02:00'); // Date actuelle CET
+    const currentDate = new Date('2025-07-09T16:40:00+02:00');
     const tripDate = new Date(trip.date_time);
     const matchesDate = tripDate >= currentDate;
     const matchesDeparture = searchDeparture
@@ -95,39 +142,36 @@ function PassengerDashboard({ token, onLogout }) {
           },
         }
       );
-      await api.post(
-        `/trips/${tripId}/notify`,
-        {},
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await sendNotification(tripId, `Booking confirmed for trip ${tripId}`);
       fetchTrips();
       setSelectedTrip(trip);
-      setBookingSuccess(true); // Confirmation visuelle
+      setBookingSuccess(true);
     } catch (err) {
       setError('Failed to book trip: ' + (err.response?.data?.detail || err.message));
     }
   };
 
-  const handleFeedbackSubmit = async (e) => {
+  const handleFeedbackSubmit = async (e, tripId) => {
     e.preventDefault();
-    if (selectedTrip && feedback.comment.trim()) {
-      try {
-        const response = await api.post(
-          '/feedback/',
-          { trip_id: selectedTrip.id, comment: feedback.comment, rating: feedback.rating },
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        console.log('Feedback submitted for trip:', selectedTrip.id, 'Response:', response.data);
-        setFeedback({ comment: '', rating: 5 });
-        setSelectedTrip(null);
-        alert('Feedback submitted successfully');
-        fetchTrips(); // Rafraîchir les trips après feedback
-      } catch (err) {
-        console.error('Failed to submit feedback:', err.response?.data || err.message);
-        setError('Failed to submit feedback: ' + (err.response?.data?.detail || err.message));
-      }
-    } else {
+    const trip = myTrips.find((t) => t.id === tripId) || selectedTrip;
+    if (!trip || !feedback.comment.trim()) {
       setError('Comment is required for feedback.');
+      return;
+    }
+    try {
+      const response = await api.post(
+        '/feedback/',
+        { trip_id: trip.id, comment: feedback.comment, rating: feedback.rating },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      console.log('Feedback submitted for trip:', trip.id, 'Response:', response.data);
+      setFeedback({ comment: '', rating: 5 });
+      setSelectedTrip(null);
+      fetchMyTrips();
+      alert('Feedback submitted successfully');
+    } catch (err) {
+      console.error('Failed to submit feedback:', err.response?.data || err.message);
+      setError('Failed to submit feedback: ' + (err.response?.data?.detail || err.message));
     }
   };
 
@@ -145,8 +189,15 @@ function PassengerDashboard({ token, onLogout }) {
   };
 
   const getDriverEmailForNotification = (tripId) => {
-    const trip = trips.find((t) => t.id === tripId);
+    const trip = myTrips.find((t) => t.id === tripId);
     return trip?.driver?.email || 'N/A';
+  };
+
+  const hasSubmittedFeedback = (tripId) => {
+    const userId = JSON.parse(atob(token.split('.')[1])).sub;
+    const trip = myTrips.find((t) => t.id === tripId);
+    console.log('Trip feedbacks:', trip?.feedbacks, 'User ID:', userId);
+    return trip?.feedbacks?.some((f) => f.user_id === userId) || false;
   };
 
   return (
@@ -255,30 +306,31 @@ function PassengerDashboard({ token, onLogout }) {
                         )}
                       </td>
                       <td className="py-2 px-4 border">
-                        <select
-                          value={bookingDetails.seats}
-                          onChange={(e) =>
-                            setBookingDetails({ seats: parseInt(e.target.value) || 1 })
-                          }
-                          className="border p-1 rounded mr-2"
-                        >
-                          {[...Array(trip.available_seats).keys()].map((i) => (
-                            <option key={i + 1} value={i + 1}>
-                              {i + 1}
-                            </option>
-                          ))}
-                        </select>
-                        <button
-                          onClick={() => handleBookTrip(trip.id)}
-                          disabled={trip.available_seats <= 0}
-                          className={`px-3 py-1 rounded ${
-                            trip.available_seats > 0
-                              ? 'bg-green-500 text-white hover:bg-green-600'
-                              : 'bg-gray-300 cursor-not-allowed'
-                          }`}
-                        >
-                          {trip.available_seats > 0 ? 'Book Now' : 'Full'}
-                        </button>
+                        {trip.available_seats > 0 ? (
+                          <>
+                            <select
+                              value={bookingDetails.seats}
+                              onChange={(e) =>
+                                setBookingDetails({ seats: parseInt(e.target.value) || 1 })
+                              }
+                              className="border p-1 rounded mr-2"
+                            >
+                              {[...Array(trip.available_seats).keys()].map((i) => (
+                                <option key={i + 1} value={i + 1}>
+                                  {i + 1}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              onClick={() => handleBookTrip(trip.id)}
+                              className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600"
+                            >
+                              Book Now
+                            </button>
+                          </>
+                        ) : (
+                          <span className="text-gray-500">Full</span>
+                        )}
                       </td>
                     </tr>
                   ))
@@ -287,16 +339,66 @@ function PassengerDashboard({ token, onLogout }) {
             </table>
           </div>
 
+          <div className="mt-6">
+            <h2 className="text-2xl font-bold mb-4 text-center">My Trips</h2>
+            <div className="overflow-x-auto">
+              <table className="min-w-full bg-white">
+                <thead>
+                  <tr className="bg-gray-100">
+                    <th className="py-3 px-4 border">From</th>
+                    <th className="py-3 px-4 border">To</th>
+                    <th className="py-3 px-4 border">Date & Time</th>
+                    <th className="py-3 px-4 border">Status</th>
+                    <th className="py-3 px-4 border">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {myTrips.length === 0 ? (
+                    <tr>
+                      <td colSpan="5" className="py-4 text-center">
+                        No trips booked yet.
+                      </td>
+                    </tr>
+                  ) : (
+                    myTrips.map((trip) => (
+                      <tr key={trip.id} className="hover:bg-gray-50">
+                        <td className="py-2 px-4 border">{trip.departure_city || 'N/A'}</td>
+                        <td className="py-2 px-4 border">{trip.destination || 'N/A'}</td>
+                        <td className="py-2 px-4 border">
+                          {new Date(trip.date_time).toLocaleString()}
+                        </td>
+                        <td className="py-2 px-4 border">{trip.status || 'N/A'}</td>
+                        <td className="py-2 px-4 border">
+                          {trip.status === 'completed' && !hasSubmittedFeedback(trip.id) ? (
+                            <button
+                              onClick={(e) => {
+                                setSelectedTrip(trip);
+                                setFeedback({ comment: '', rating: 5 });
+                              }}
+                              className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 mr-2"
+                            >
+                              Submit Feedback
+                            </button>
+                          ) : (
+                            <span className="text-gray-500">N/A</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           {selectedTrip && (
             <div className="mt-4">
               <h3 className="text-xl font-bold mb-2">Leave Feedback for Trip #{selectedTrip.id}</h3>
               <p className="mb-2">Your email: {localStorage.getItem('userEmail') || 'Not available'}</p>
-              <form onSubmit={handleFeedbackSubmit} className="space-y-4">
+              <form onSubmit={(e) => handleFeedbackSubmit(e, selectedTrip.id)} className="space-y-4">
                 <textarea
                   value={feedback.comment}
-                  onChange={(e) =>
-                    setFeedback({ ...feedback, comment: e.target.value })
-                  }
+                  onChange={(e) => setFeedback({ ...feedback, comment: e.target.value })}
                   placeholder="Leave feedback for this trip..."
                   className="w-full p-2 border rounded"
                   required
@@ -307,10 +409,7 @@ function PassengerDashboard({ token, onLogout }) {
                   max="5"
                   value={feedback.rating}
                   onChange={(e) =>
-                    setFeedback({
-                      ...feedback,
-                      rating: parseInt(e.target.value) || 5,
-                    })
+                    setFeedback({ ...feedback, rating: parseInt(e.target.value) || 5 })
                   }
                   placeholder="Rating (1-5)"
                   className="w-full p-2 border rounded"
@@ -346,10 +445,7 @@ function PassengerDashboard({ token, onLogout }) {
               type="text"
               value={newTripRequest.departure_city}
               onChange={(e) =>
-                setNewTripRequest({
-                  ...newTripRequest,
-                  departure_city: e.target.value,
-                })
+                setNewTripRequest({ ...newTripRequest, departure_city: e.target.value })
               }
               placeholder="Departure City"
               className="w-full p-2 border rounded"
@@ -359,10 +455,7 @@ function PassengerDashboard({ token, onLogout }) {
               type="text"
               value={newTripRequest.destination}
               onChange={(e) =>
-                setNewTripRequest({
-                  ...newTripRequest,
-                  destination: e.target.value,
-                })
+                setNewTripRequest({ ...newTripRequest, destination: e.target.value })
               }
               placeholder="Destination"
               className="w-full p-2 border rounded"
@@ -372,10 +465,7 @@ function PassengerDashboard({ token, onLogout }) {
               type="datetime-local"
               value={newTripRequest.date_time}
               onChange={(e) =>
-                setNewTripRequest({
-                  ...newTripRequest,
-                  date_time: e.target.value,
-                })
+                setNewTripRequest({ ...newTripRequest, date_time: e.target.value })
               }
               className="w-full p-2 border rounded"
               required
@@ -383,10 +473,7 @@ function PassengerDashboard({ token, onLogout }) {
             <select
               value={newTripRequest.sexe}
               onChange={(e) =>
-                setNewTripRequest({
-                  ...newTripRequest,
-                  sexe: e.target.value,
-                })
+                setNewTripRequest({ ...newTripRequest, sexe: e.target.value })
               }
               className="w-full p-2 border rounded"
             >
@@ -438,6 +525,22 @@ function PassengerDashboard({ token, onLogout }) {
                             </p>
                           </>
                         )}
+                        {notification.driver_email && (
+                          <p>
+                            <strong>From Driver Email:</strong> {notification.driver_email}
+                          </p>
+                        )}
+          {notification.departure_city && notification.destination && (
+                          <>
+                            <p>
+                              <strong>Departure:</strong> {notification.departure_city}
+                            </p>
+                            <p>
+                              <strong>Destination:</strong> {notification.destination}
+                            </p>
+                          </>
+                        )}
+
                       </li>
                     ))}
                   </ul>

@@ -65,6 +65,7 @@ async def create_trip(
     description: str = Form(None),
     return_date: str = Form(None),
     sexe: str = Form(None),
+    custom_notification_message: str = Form(None), 
     photo: UploadFile = File(None),
     current_user: UserSchema = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -108,7 +109,8 @@ async def create_trip(
         return_date=return_date_obj,
         photo_path=photo_path,
         status="planned",
-        sexe=sexe
+        sexe=sexe,
+        custom_notification_message=custom_notification_message 
     )
     db.add(db_trip)
     try:
@@ -255,6 +257,50 @@ def get_admin_trips(db: Session = Depends(get_db), current_user: UserSchema = De
         if trip.driver
     ]
 
+@router.get("/booked", response_model=list[Trip])
+def get_booked_trips(current_user: UserSchema = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user.role != "passenger":
+        raise HTTPException(status_code=403, detail="Only passengers can view booked trips")
+    bookings = db.query(BookingModel).filter(BookingModel.passenger_id == current_user.id).all()
+    trip_ids = [booking.trip_id for booking in bookings]
+    trips = db.query(TripModel).filter(TripModel.id.in_(trip_ids)).all()
+    for trip in trips:
+        update_trip_status(trip, db)
+    return [
+        Trip(
+            id=trip.id,
+            driver_id=trip.driver_id,
+            departure_city=trip.departure_city,
+            destination=trip.destination,
+            date_time=trip.date_time,
+            available_seats=trip.available_seats,
+            price=trip.price,
+            created_at=trip.created_at,
+            car_type=trip.car_type,
+            description=trip.description,
+            return_date=trip.return_date,
+            photo_path=trip.photo_path,
+            status=trip.status,
+            sexe=trip.sexe,
+            driver=UserBase.from_orm(trip.driver) if trip.driver else None,
+            bookings=[Booking.from_orm(b) for b in trip.bookings],
+            feedbacks=[
+                {
+                    "id": f.id,
+                    "user_id": f.user_id,
+                    "trip_id": f.trip_id,
+                    "rating": f.rating,
+                    "comment": f.comment,
+                    "created_at": f.created_at,
+                    "passenger_email": db.query(UserModel).filter(UserModel.id == f.user_id).first().email if f.user_id else "unknown"
+                }
+                for f in trip.feedbacks
+            ]
+        )
+        for trip in trips
+        if trip.driver and trip.driver.email and trip.driver.role and trip.driver.sexe
+    ]
+
 @router.put("/{trip_id}", response_model=Trip)
 async def update_trip(
     trip_id: int,
@@ -267,6 +313,7 @@ async def update_trip(
     description: str = Form(None),
     return_date: str = Form(None),
     sexe: str = Form(None),
+    custom_notification_message: str = Form(None), 
     photo: UploadFile = File(None),
     current_user: UserSchema = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -296,6 +343,8 @@ async def update_trip(
         return_date = db_trip.return_date.isoformat().replace('+00:00', 'Z') if db_trip.return_date else None
     if sexe is None:
         sexe = db_trip.sexe
+    if custom_notification_message is None:
+        custom_notification_message = db_trip.custom_notification_message
 
     try:
         trip_date = datetime.fromisoformat(date_time.replace('Z', '+00:00') if date_time else db_trip.date_time.isoformat())
@@ -326,6 +375,7 @@ async def update_trip(
     db_trip.description = description
     db_trip.return_date = return_date_obj
     db_trip.sexe = sexe
+    db_trip.custom_notification_message = custom_notification_message
 
     update_trip_status(db_trip, db)
     try:
@@ -418,34 +468,37 @@ def notify_driver(
         logger.warning(f"No SendGrid client available for trip {trip_id}. Email not sent.")
         return {"message": "Booking confirmed, but email sending disabled due to missing API key"}
 
+    # Utiliser le message personnalisé s'il existe, sinon un message par défaut
+    custom_message = trip.custom_notification_message
+    message_content = custom_message if custom_message else f"""
+    Dear {driver.email.split('@')[0]},
+
+    A new booking has been confirmed for your trip!
+    Trip Details:
+    - Trip ID: {trip_id}
+    - Departure: {trip.departure_city}
+    - Destination: {trip.destination}
+    - Date and Time: {trip.date_time.strftime('%Y-%m-%d %H:%M')}
+    - Passenger Email: {current_user.email}
+    """
+
     try:
         subject = "New Booking Notification"
-        content_str = f"""
-        Dear {driver.email.split('@')[0]},
-
-        A new booking has been confirmed for your trip!
-        Trip Details:
-        - Trip ID: {trip_id}
-        - Departure: {trip.departure_city}
-        - Destination: {trip.destination}
-        - Date and Time: {trip.date_time.strftime('%Y-%m-%d %H:%M')}
-        - Passenger Email: {current_user.email}
-        """
         mail = Mail(
             from_email=Email(EMAIL_FROM, "Covoiturage Team"),
             to_emails=To(driver.email),
             subject=subject
         )
-        mail.add_content(Content("text/plain", content_str))
+        mail.add_content(Content("text/plain", message_content))
         response = SG_CLIENT.send(mail)
         logger.info(f"Email sent to {driver.email} for booking {trip_id}, status: {response.status_code}")
 
         # Créer une notification pour le conducteur
         notification = NotificationModel(
-            passenger_id=current_user.id,  # L'utilisateur qui a réservé (passager)
-            driver_id=trip.driver_id,      # Le conducteur du trip
-            trip_id=trip_id,              # Lien avec le trip
-            message=f"New booking notification for trip {trip_id}",
+            passenger_id=current_user.id,
+            driver_id=trip.driver_id,
+            trip_id=trip_id,
+            message=message_content,
             created_at=datetime.utcnow(),
             email_status="sent" if response.status_code == 202 else "failed"
         )
@@ -485,3 +538,49 @@ async def update_user_photo(
         raise HTTPException(status_code=500, detail="Failed to update photo")
 
     return {"message": "Photo updated successfully", "photo_path": photo_path}
+
+@router.get("/completed", response_model=list[Trip])
+def get_completed_trips(current_user: UserSchema = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user.role != "passenger":
+        raise HTTPException(status_code=403, detail="Only passengers can view completed trips")
+    current_time = datetime.utcnow()
+    completed_trips = db.query(TripModel).join(BookingModel, TripModel.id == BookingModel.trip_id).filter(
+        BookingModel.passenger_id == current_user.id,
+        TripModel.status == "completed"
+    ).all()
+    for trip in completed_trips:
+        update_trip_status(trip, db)
+    return [
+        Trip(
+            id=trip.id,
+            driver_id=trip.driver_id,
+            departure_city=trip.departure_city,
+            destination=trip.destination,
+            date_time=trip.date_time,
+            available_seats=trip.available_seats,
+            price=trip.price,
+            created_at=trip.created_at,
+            car_type=trip.car_type,
+            description=trip.description,
+            return_date=trip.return_date,
+            photo_path=trip.photo_path,
+            status=trip.status,
+            sexe=trip.sexe,
+            driver=UserBase.from_orm(trip.driver) if trip.driver else None,
+            bookings=[Booking.from_orm(b) for b in trip.bookings],
+            feedbacks=[
+                {
+                    "id": f.id,
+                    "user_id": f.user_id,
+                    "trip_id": f.trip_id,
+                    "rating": f.rating,
+                    "comment": f.comment,
+                    "created_at": f.created_at,
+                    "passenger_email": db.query(UserModel).filter(UserModel.id == f.user_id).first().email if f.user_id else "unknown"
+                }
+                for f in trip.feedbacks
+            ]
+        )
+        for trip in completed_trips
+        if trip.driver and trip.driver.email and trip.driver.role and trip.driver.sexe
+    ]

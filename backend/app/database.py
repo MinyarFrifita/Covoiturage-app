@@ -1,5 +1,5 @@
 from sqlalchemy import (
-    create_engine, Column, Integer, String, DateTime, Float, ForeignKey, Text, 
+    create_engine, Column, Integer, String, DateTime, Float, ForeignKey, Text,
     CheckConstraint, Enum, Boolean
 )
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
@@ -44,7 +44,7 @@ class User(Base):
     trips = relationship("Trip", back_populates="driver", cascade="all, delete-orphan")
     bookings = relationship("Booking", back_populates="passenger", cascade="all, delete-orphan")
     feedbacks = relationship("Feedback", back_populates="user", cascade="all, delete-orphan")
-    trip_requests = relationship("TripRequest", back_populates="passenger", cascade="all, delete-orphan")  # Ajouté
+    trip_requests = relationship("TripRequest", back_populates="passenger", cascade="all, delete-orphan")
     notifications_sent = relationship(
         "Notification", 
         back_populates="driver", 
@@ -75,7 +75,7 @@ class Trip(Base):
     return_date = Column(DateTime, nullable=True)
     status = Column(String(50), nullable=False, default="planned")
     sexe = Column(String(20), nullable=True)
-    
+    custom_notification_message = Column(String(500), nullable=True)
     driver = relationship("User", back_populates="trips")
     bookings = relationship("Booking", back_populates="trip", cascade="all, delete-orphan")
     feedbacks = relationship("Feedback", back_populates="trip", cascade="all, delete-orphan")

@@ -11,11 +11,11 @@ from app.routes.trips import router as trips_router
 from app.routes.trip_requests import router as trip_requests_router
 from app.routes.notifications import router as notifications_router
 from app.routes.feedback import router as feedback_router
-from app.auth import create_access_token  
+from app.auth import create_access_token, get_current_user
 from datetime import timedelta
 import os
-import logging
 from dotenv import load_dotenv
+import logging
 
 # Charger les variables d'environnement
 load_dotenv()
@@ -27,18 +27,19 @@ app = FastAPI()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Configuration SendGrid (sécurisée via variables d'environnement)
+# Configuration de SendGrid
 SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
 if not SENDGRID_API_KEY:
-    logger.warning("SendGrid API key not found in environment variables")
-    SG_CLIENT = None
-else:
-    SG_CLIENT = SendGridAPIClient(SENDGRID_API_KEY)
+    logger.warning("SENDGRID_API_KEY not found in .env. Email sending will be disabled.")
+SG_CLIENT = SendGridAPIClient(SENDGRID_API_KEY) if SENDGRID_API_KEY else None
+EMAIL_FROM = os.getenv("EMAIL_FROM", "no-reply@covoiturage-app.com")
+if not EMAIL_FROM.startswith("verified@") and SG_CLIENT:
+    logger.warning(f"Email from {EMAIL_FROM} may not be verified with SendGrid. Ensure sender authentication is set up.")
 
 # Middleware CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"], 
+    allow_origins=["http://localhost:5173"],  # Ajuster pour la production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -69,8 +70,8 @@ app.include_router(feedback_router)
 
 # Route racine
 @app.get("/")
-def read_root():
-    return {"message": "Welcome to Covoiturage API"}
+def read_root(current_user: dict = Depends(get_current_user)):
+    return {"message": "Welcome to Covoiturage API", "user": current_user.get("email") if current_user else None}
 
 if __name__ == "__main__":
     import uvicorn

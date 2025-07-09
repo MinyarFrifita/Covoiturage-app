@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from ..auth import get_current_user
-from ..database import get_db, Feedback as FeedbackModel, Trip as TripModel
+from ..database import get_db, Feedback as FeedbackModel, Trip as TripModel, Booking as BookingModel
 from ..schemas import FeedbackCreate, Feedback
 from sqlalchemy.orm import Session
 from datetime import datetime
@@ -24,6 +24,10 @@ def create_feedback(
     if not feedback.trip_id:
         raise HTTPException(status_code=400, detail="trip_id is required")
 
+    # Vérifier si l'utilisateur est un passager
+    if current_user.role != "passenger":
+        raise HTTPException(status_code=403, detail="Only passengers can submit feedback")
+
     # Vérifier le statut du trip
     trip = db.query(TripModel).filter(TripModel.id == feedback.trip_id).first()
     if not trip:
@@ -31,10 +35,23 @@ def create_feedback(
     if trip.status != "completed":
         raise HTTPException(status_code=400, detail="Feedback can only be submitted for completed trips")
 
+    # Vérifier si le passager a une réservation pour ce trip
+    booking = db.query(BookingModel).filter(
+        BookingModel.trip_id == feedback.trip_id,
+        BookingModel.passenger_id == current_user.id
+    ).first()
+    if not booking:
+        raise HTTPException(status_code=403, detail="You must have a booking for this trip to submit feedback")
+
+    # Valider la plage de rating (1-5)
+    if not 1 <= feedback.rating <= 5:
+        raise HTTPException(status_code=400, detail="Rating must be between 1 and 5")
+
     db_feedback = FeedbackModel(
         user_id=current_user.id,
         trip_id=feedback.trip_id,
-        rating=feedback.rating if hasattr(feedback, 'rating') else 0,
+        booking_id=booking.id if booking else None,  # Lier au booking si existant
+        rating=feedback.rating,
         comment=feedback.comment,
         created_at=datetime.utcnow()
     )
@@ -60,6 +77,12 @@ def get_feedback_by_trip(
     if not hasattr(current_user, 'role') or current_user.role != "driver":
         logger.warning(f"Access denied for user {current_user.email} with role {getattr(current_user, 'role', 'None')}")
         raise HTTPException(status_code=403, detail="Only drivers can view feedback")
+    
+    # Vérifier que le trip appartient au conducteur
+    trip = db.query(TripModel).filter(TripModel.id == trip_id, TripModel.driver_id == current_user.id).first()
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found or not authorized")
+
     feedbacks = db.query(FeedbackModel).filter(FeedbackModel.trip_id == trip_id).all()
-    logger.info(f"Retrieved {len(feedbacks)} feedbacks for trip_id={trip_id}: {[f.comment for f in feedbacks]}")
+    logger.info(f"Retrieved {len(feedbacks)} feedbacks for trip_id={trip_id}: {[f.comment for f in feedbacks if f.comment]}")
     return [Feedback.from_orm(feedback) for feedback in feedbacks]

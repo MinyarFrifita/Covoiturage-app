@@ -10,7 +10,7 @@ class UserRole(str, Enum):
     passenger = "passenger"
     admin = "admin"
 
-# Définir UserBase en premier pour éviter les références circulaires
+
 class UserBase(BaseModel):
     id: int
     email: str
@@ -21,7 +21,7 @@ class UserBase(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 class UserLogin(BaseModel):
-    username: str  # email utilisé comme username
+    username: str  
     password: str
 
     model_config = ConfigDict(from_attributes=True)
@@ -34,7 +34,6 @@ class UserCreate(UserBase):
 class User(UserBase):
     id: int
     created_at: datetime
-    
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -54,17 +53,14 @@ class TripBase(BaseModel):
     description: Optional[str] = None
     return_date: Optional[datetime] = None
     photo_path: Optional[str] = None
-    status: str
-    sexe: Optional[str] = None
     status: TripStatus = TripStatus.planned
+    sexe: Optional[str] = None
+    custom_notification_message: Optional[str] = None
+
     model_config = ConfigDict(from_attributes=True)
 
 class TripCreate(TripBase):
-    car_type: Optional[str] = None
-    photo_path: Optional[str] = None
-    description: Optional[str] = None
-    return_date: Optional[datetime] = None
-    sexe: Optional[str] = None
+    pass 
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -72,10 +68,10 @@ class Trip(TripCreate):
     id: int
     driver_id: int
     created_at: datetime
-    status: TripStatus
-    driver: Optional[UserBase] = None  
-    bookings: List[Booking] = []
-    feedbacks: List[dict] = []  
+    driver: Optional[UserBase] = None
+    bookings: List["Booking"] = []
+    feedbacks: List["Feedback"] = []
+
     model_config = ConfigDict(from_attributes=True)
 
 class TripResponse(BaseModel):
@@ -83,7 +79,7 @@ class TripResponse(BaseModel):
     departure_city: str
     destination: str
     date_time: str
-    available_seats: inta
+    available_seats: int
     price: float
     driver_id: int
     created_at: str
@@ -91,16 +87,17 @@ class TripResponse(BaseModel):
     description: Optional[str] = None
     return_date: Optional[str] = None
     photo_path: Optional[str] = None
-    status: str = "planned" 
+    status: str
     sexe: Optional[str] = None
     driver: Optional[dict] = None
     bookings: list = []
     feedbacks: list = []
+
     model_config = ConfigDict(from_attributes=True)
-   
 
 class BookingBase(BaseModel):
     trip_id: int
+    passenger_id: int
     seats_booked: int
 
     model_config = ConfigDict(from_attributes=True)
@@ -110,9 +107,8 @@ class BookingCreate(BookingBase):
 
     model_config = ConfigDict(from_attributes=True)
 
-class Booking(BookingBase):
+class Booking(BookingCreate):
     id: int
-    passenger_id: int
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -143,16 +139,19 @@ class TripRequest(TripRequestBase):
 class NotificationCreate(BaseModel):
     passenger_id: int
     message: str
-    trip_id: Optional[int] = None  
+    trip_id: Optional[int] = None
+    driver_id: Optional[int] = None 
 
     model_config = ConfigDict(from_attributes=True)
 
 class Notification(NotificationCreate):
     id: int
-    driver_id: int
     created_at: datetime
     email_status: Optional[str] = "pending"
-
+    is_read: Optional[bool] = False
+    driver_email: Optional[str] = None
+    departure_city: Optional[str] = None  
+    destination: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)
 
 class FeedbackBase(BaseModel):
@@ -160,7 +159,8 @@ class FeedbackBase(BaseModel):
     rating: int
     comment: Optional[str] = None
     booking_id: Optional[int] = None
-    passenger_email: Optional[str] = None  
+    passenger_email: Optional[str] = None
+
     model_config = ConfigDict(from_attributes=True)
 
 class FeedbackCreate(FeedbackBase):
@@ -168,7 +168,7 @@ class FeedbackCreate(FeedbackBase):
 
     model_config = ConfigDict(from_attributes=True)
 
-class Feedback(FeedbackBase):
+class Feedback(FeedbackCreate):
     id: int
     user_id: int
     created_at: datetime

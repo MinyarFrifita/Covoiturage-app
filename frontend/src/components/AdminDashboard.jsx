@@ -140,7 +140,7 @@ const AdminDashboard = ({ token, onLogout, currentAdmin }) => {
           <header>
             <h1 className="text-white font-bold mb-4 text-5xl">Admin Dashboard</h1>
             <div className="admin-actions">
-              <span className="text-white font-bold ">WELCOME</span>
+              <span className="text-white font-bold text-2xl">WELCOME</span>
               <button onClick={onLogout} className="text-blue font-bold">
                 Logout
               </button>
@@ -293,7 +293,7 @@ const AdminDashboard = ({ token, onLogout, currentAdmin }) => {
                     <th>Price</th>
                     <th>Car Type</th>
                     <th>Description</th>
-                    <th>driver Sexe</th>
+                    <th>driver Gender</th>
                     <th>Driver Email</th>
                     <th>Driver Photo</th>
                   </tr>
