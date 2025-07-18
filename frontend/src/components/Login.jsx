@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
-import bg from '/home/Minyar/covoiturage-app/frontend/src/assets/Background.png';
+import bg from '../assets/Background.png';
 import ReCAPTCHA from 'react-google-recaptcha';
 
 function Login({ setToken, setUserRole }) {
@@ -41,8 +41,8 @@ function Login({ setToken, setUserRole }) {
     try {
       const response = await api.post('/auth/token', 
         new URLSearchParams({
-          username: email,  // Ne pas encoder l'email, envoyer tel quel
-          password: encodeURIComponent(password),  // Encoder uniquement le mot de passe
+          username: email,
+          password: encodeURIComponent(password),
           recaptcha_token: captchaToken
         }),
         { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }

@@ -79,10 +79,8 @@ def validate_date_range(start_date: str, end_date: str) -> tuple[date, date]:
     try:
         start = datetime.strptime(start_date, "%Y-%m-%d").date()
         end = datetime.strptime(end_date, "%Y-%m-%d").date()
-        
         if start > end:
             raise ValueError("start_date must be before end_date")
-            
         return start, end
     except ValueError as e:
         logger.warning(f"Invalid date format: {e}")
@@ -120,15 +118,15 @@ async def get_all_trips(
             joinedload(TripModel.feedbacks).joinedload(FeedbackModel.user),
             joinedload(TripModel.driver)
         )
-        
+
         if start_date or end_date:
             start, end = validate_date_range(
                 start_date or "1900-01-01",
                 end_date or datetime.now().strftime("%Y-%m-%d")
             )
             query = query.filter(
-                TripModel.date_time >= start,
-                TripModel.date_time <= end + timedelta(days=1)
+                TripModel.date_time >= datetime.combine(start, datetime.min.time()),
+                TripModel.date_time <= datetime.combine(end, datetime.max.time())
             )
         
         trips = query.all()
@@ -140,6 +138,37 @@ async def get_all_trips(
             else:
                 logger.warning(f"No driver found for trip ID {trip.id} with driver_id {trip.driver_id}")
             
+            # Convertir photo_path en chaîne valide avec gestion d'erreur
+            trip_photo_path = None
+            if trip.photo_path is not None:
+                if isinstance(trip.photo_path, (bytes, memoryview)):
+                    try:
+                        # Convertir en liste d'entiers et vérifier si ASCII
+                        byte_values = [b for b in trip.photo_path.tobytes() if isinstance(b, int)]
+                        if all(b < 128 for b in byte_values):
+                            trip_photo_path = trip.photo_path.tobytes().decode('utf-8')
+                        else:
+                            trip_photo_path = str(trip.photo_path)  # Fallback si non ASCII
+                    except (UnicodeDecodeError, AttributeError):
+                        trip_photo_path = str(trip.photo_path)  # Fallback si décodage échoue
+                else:
+                    trip_photo_path = str(trip.photo_path)
+            logger.debug(f"Trip {trip.id} photo_path raw: {trip.photo_path}, type: {type(trip.photo_path)}, converted: {trip_photo_path}")
+
+            driver_photo_path = None
+            if driver and driver.photo_path is not None:
+                if isinstance(driver.photo_path, (bytes, memoryview)):
+                    try:
+                        byte_values = [b for b in driver.photo_path.tobytes() if isinstance(b, int)]
+                        if all(b < 128 for b in byte_values):
+                            driver_photo_path = driver.photo_path.tobytes().decode('utf-8')
+                        else:
+                            driver_photo_path = str(driver.photo_path)
+                    except (UnicodeDecodeError, AttributeError):
+                        driver_photo_path = str(driver.photo_path)
+                else:
+                    driver_photo_path = str(driver.photo_path)
+
             trips_with_driver.append(
                 TripResponse(
                     id=trip.id,
@@ -151,12 +180,12 @@ async def get_all_trips(
                     price=trip.price,
                     driver_id=trip.driver_id,
                     driver_email=driver.email if driver else None,
-                    driver_photo=driver.photo_path if driver and driver.photo_path else None,
+                    driver_photo=driver_photo_path,
                     car_type=trip.car_type,
                     description=trip.description,
-                    photo_path=trip.photo_path,
-                    status=getattr(trip, 'status', 'planned'),
-                    sexe=trip.sexe if trip.sexe else None,  # Assure que sexe est transmis
+                    photo_path=trip_photo_path,
+                    status=trip.status or "planned",
+                    sexe=trip.sexe,
                     feedbacks=[
                         FeedbackBase(
                             id=feedback.id,
@@ -170,10 +199,7 @@ async def get_all_trips(
             )
         
         logger.info(f"Admin {admin.email} fetched {len(trips)} trips")
-        if not trips:
-            logger.warning("No trips found in the specified date range")
         return trips_with_driver
-        
     except HTTPException:
         raise
     except Exception as e:
@@ -220,20 +246,15 @@ async def get_admin_stats(
     """Récupère les statistiques administratives"""
     try:
         stats = {
-            "total_users": db.query(UserModel)
-                           .filter(UserModel.email != "admin@gmail.com")
-                           .count(),
+            "total_users": db.query(UserModel).filter(UserModel.email != "admin@gmail.com").count(),
             "total_trips": db.query(TripModel).count(),
         }
 
         week_ago = datetime.utcnow() - timedelta(days=7)
-        
         stats.update({
             "new_users_week": db.query(UserModel)
-                              .filter(
-                                  UserModel.created_at >= week_ago,
-                                  UserModel.email != "admin@gmail.com"
-                              ).count(),
+                              .filter(UserModel.created_at >= week_ago, UserModel.email != "admin@gmail.com")
+                              .count(),
             "recent_trips_week": db.query(TripModel)
                                  .filter(TripModel.created_at >= week_ago)
                                  .count(),
@@ -241,7 +262,6 @@ async def get_admin_stats(
 
         logger.info(f"Admin {admin.email} accessed stats")
         return stats
-
     except Exception as e:
         logger.error(f"Error generating stats: {str(e)}", exc_info=True)
         raise HTTPException(
@@ -264,14 +284,12 @@ async def delete_user(
     """Supprime un utilisateur"""
     try:
         db_user = db.query(UserModel).get(user_id)
-        
         if not db_user:
             logger.warning(f"User {user_id} not found")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="User not found"
             )
-            
         if db_user.email == "admin@gmail.com":
             logger.warning(f"Attempt to delete main admin by {admin.email}")
             raise HTTPException(
@@ -281,13 +299,11 @@ async def delete_user(
 
         db.delete(db_user)
         db.commit()
-        
         logger.info(f"User {user_id} deleted by {admin.email}")
         return JSONResponse(
             status_code=status.HTTP_200_OK,
             content={"message": "User deleted successfully"}
         )
-        
     except HTTPException:
         raise
     except SQLAlchemyError as e:
@@ -328,7 +344,6 @@ async def update_user_photo(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="User not found"
             )
-
         if db_user.email == "admin@gmail.com":
             logger.warning(f"Attempt to update admin photo by {admin.email}")
             raise HTTPException(
@@ -337,27 +352,23 @@ async def update_user_photo(
             )
 
         os.makedirs("uploads", exist_ok=True)
-        
         file_ext = os.path.splitext(photo.filename)[1]
         unique_filename = f"user_{user_id}_{int(datetime.now().timestamp())}{file_ext}"
         filepath = os.path.join("uploads", unique_filename)
-        
         contents = await photo.read()
         with open(filepath, "wb") as f:
             f.write(contents)
         
-        db_user.photo_path = filepath
+        db_user.photo_path = unique_filename  # Stocker uniquement le nom du fichier
         db.commit()
-        
         logger.info(f"Photo updated for user {user_id} by {admin.email}")
         return JSONResponse(
             status_code=status.HTTP_200_OK,
             content={
                 "message": "Photo updated successfully",
-                "filepath": filepath
+                "filepath": unique_filename
             }
         )
-        
     except HTTPException:
         raise
     except Exception as e:

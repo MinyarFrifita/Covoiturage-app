@@ -9,7 +9,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
-    prefix="/feedback",
+    prefix="/feedback/feedback",
     tags=["feedback"]
 )
 
@@ -24,18 +24,15 @@ def create_feedback(
     if not feedback.trip_id:
         raise HTTPException(status_code=400, detail="trip_id is required")
 
-    # Vérifier si l'utilisateur est un passager
     if current_user.role != "passenger":
         raise HTTPException(status_code=403, detail="Only passengers can submit feedback")
 
-    # Vérifier le statut du trip
     trip = db.query(TripModel).filter(TripModel.id == feedback.trip_id).first()
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")
     if trip.status != "completed":
         raise HTTPException(status_code=400, detail="Feedback can only be submitted for completed trips")
 
-    # Vérifier si le passager a une réservation pour ce trip
     booking = db.query(BookingModel).filter(
         BookingModel.trip_id == feedback.trip_id,
         BookingModel.passenger_id == current_user.id
@@ -43,14 +40,13 @@ def create_feedback(
     if not booking:
         raise HTTPException(status_code=403, detail="You must have a booking for this trip to submit feedback")
 
-    # Valider la plage de rating (1-5)
     if not 1 <= feedback.rating <= 5:
         raise HTTPException(status_code=400, detail="Rating must be between 1 and 5")
 
     db_feedback = FeedbackModel(
         user_id=current_user.id,
         trip_id=feedback.trip_id,
-        booking_id=booking.id if booking else None,  # Lier au booking si existant
+        booking_id=booking.id,
         rating=feedback.rating,
         comment=feedback.comment,
         created_at=datetime.utcnow()
@@ -78,7 +74,6 @@ def get_feedback_by_trip(
         logger.warning(f"Access denied for user {current_user.email} with role {getattr(current_user, 'role', 'None')}")
         raise HTTPException(status_code=403, detail="Only drivers can view feedback")
     
-    # Vérifier que le trip appartient au conducteur
     trip = db.query(TripModel).filter(TripModel.id == trip_id, TripModel.driver_id == current_user.id).first()
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found or not authorized")

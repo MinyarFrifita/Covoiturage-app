@@ -208,13 +208,13 @@ function TripCard({ trip, token, onUpdate }) {
           <button onClick={() => setIsEditing(true)} className="bg-blue-600 text-white p-2 rounded mr-2">
             Edit
           </button>
-          <button onClick={handleDelete} className="bg-red-500 text-white p-2 rounded mr-2">
+          <button onClick={handleDelete} className="bg-green-500 text-white p-2 rounded mr-2">
             Delete
           </button>
         </>
       ) : (
         <>
-          <button onClick={handleDelete} className="bg-red-500 text-white p-2 rounded mr-2">
+          <button onClick={handleDelete} className="bg-green-500 text-white p-2 rounded mr-2">
             Delete
           </button>
           <button onClick={viewFeedback} className="bg-green-500 text-white p-2 rounded">

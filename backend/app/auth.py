@@ -10,29 +10,29 @@ from typing import Optional
 from sqlalchemy.orm import Session
 import requests
 import logging
-import urllib.parse
 
 load_dotenv()
 
-# Configuration des paramètres de sécurité
-SECRET_KEY = os.getenv("SECRET_KEY", "4e9f8d7c6b5a4e9f8d7c6b5a4e9f8d7c6b5a4e9f8d7c6b5a4e9f8d7c6b5a4e9f")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Initialisation du contexte de hachage des mots de passe
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    logger.error("SECRET_KEY is not set in .env file. Using a weak default for development only.")
+    SECRET_KEY = "4e9f8d7c6b5a4e9f8d7c6b5a4e9f8d7c6b5a4e9f8d7c6b5a4e9f8d7c6b5a4e9f"
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30  # Peut être augmenté pour des tests
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# Configuration de l'authentification OAuth2
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
-# Fonctions de hachage et vérification
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
-# Création de token
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()
     if expires_delta:
@@ -43,7 +43,6 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
-# Récupération de l'utilisateur
 async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -54,40 +53,37 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         email: str = payload.get("sub")
         if email is None:
-            logging.error(f"Payload missing 'sub': {payload}")
+            logger.error(f"Payload missing 'sub': {payload}")
             raise credentials_exception
-        # Normaliser l'email avec unquote pour gérer tous les encodages
-        normalized_email = urllib.parse.unquote(email)
-        logging.info(f"Decoded email from token: {normalized_email}")
+        user = db.query(User).filter(User.email == email).first()
+        if not user:
+            logger.warning(f"User not found for email: {email}")
+            raise credentials_exception
+        return user
     except JWTError as e:
-        logging.error(f"JWT Error: {str(e)}")
+        logger.error(f"JWT Error: {str(e)} with token: {token[:10]}...")
         raise credentials_exception
 
-    # Tenter de trouver l'utilisateur avec les deux formats (normalisé et encodé)
-    for email_variant in [normalized_email, urllib.parse.quote(normalized_email)]:
-        user = db.query(User).filter(User.email == email_variant).first()
-        if user:
-            logging.info(f"User found with email: {email_variant}")
-            return user
-    logging.warning(f"User not found for email variants: {normalized_email}, {urllib.parse.quote(normalized_email)}")
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail=f"User not found for email: {normalized_email}",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+async def get_user_by_id(user_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    target_user = db.query(User).filter(User.id == user_id).first()
+    if not target_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if current_user.id != user_id and current_user.role != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to access this profile")
+    return target_user
 
-# reCAPTCHA
 async def verify_recaptcha(token: str):
     if not token:
-        raise HTTPException(status_code=400, detail="reCAPTCHA token is required")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="reCAPTCHA token is required")
     recaptcha_secret = os.getenv("RECAPTCHA_SECRET_KEY")
     if not recaptcha_secret:
-        raise HTTPException(status_code=500, detail="reCAPTCHA secret key not configured")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="reCAPTCHA secret key not configured")
     response = requests.post(
         "https://www.google.com/recaptcha/api/siteverify",
         data={"secret": recaptcha_secret, "response": token}
     )
     result = response.json()
     if not result.get("success"):
-        raise HTTPException(status_code=400, detail="reCAPTCHA verification failed")
+        logger.warning(f"reCAPTCHA verification failed: {result.get('error-codes')}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="reCAPTCHA verification failed")
     return True

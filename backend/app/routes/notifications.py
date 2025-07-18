@@ -1,5 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, HTTPException, Request, Query
+from sqlalchemy.orm import Session, joinedload
 from ..auth import get_current_user
 from ..database import get_db, User as UserModel, Trip as TripModel, Notification as NotificationModel
 from ..schemas import NotificationCreate, Notification
@@ -9,36 +9,41 @@ from dotenv import load_dotenv
 import os
 import logging
 from datetime import datetime
+from typing import Optional
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
-    prefix="/notifications",
+    prefix="/notifications/notifications",
     tags=["notifications"]
 )
 
 SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
 if not SENDGRID_API_KEY:
-    raise ValueError("SENDGRID_API_KEY must be set in .env")
-SG_CLIENT = SendGridAPIClient(SENDGRID_API_KEY)
+    logger.warning("SENDGRID_API_KEY not found in .env. Email sending will be disabled.")
+    SG_CLIENT = None
+else:
+    try:
+        SG_CLIENT = SendGridAPIClient(SENDGRID_API_KEY)
+        SG_CLIENT.client.mail.send.get()  # Test de validation de l'API
+        logger.info("SendGrid API key validated successfully.")
+    except Exception as e:
+        logger.error("SendGrid API key validation failed: %s", str(e))
+        SG_CLIENT = None
 
 EMAIL_FROM = os.getenv("EMAIL_FROM", "no-reply@covoiturage-app.com")
-if not EMAIL_FROM.startswith("verified@"):
+if SG_CLIENT and not EMAIL_FROM.startswith("verified@"):
     logger.warning(f"Email from {EMAIL_FROM} may not be verified with SendGrid. Ensure sender authentication is set up.")
 
 def send_notification_email(recipient_email: str, trip: TripModel = None, message: str = "") -> tuple[str, str]:
+    if not SG_CLIENT:
+        logger.warning("SendGrid client not available. Email sending skipped.")
+        return "failed", "SendGrid client not configured"
     if not recipient_email or '@' not in recipient_email:
         logger.error("Invalid recipient email: %s", recipient_email)
         return "failed", "Invalid recipient email"
-
-    try:
-        response = SG_CLIENT.client._ping.get()
-        logger.info("SendGrid API key is valid, response: %s", response.status_code)
-    except Exception as e:
-        logger.error("SendGrid API key validation failed: %s", str(e))
-        return "failed", "Invalid API key or permissions"
 
     subject = "New Notification"
     plain_content = f"""
@@ -100,20 +105,18 @@ The Covoiturage Team
 
 @router.post("/", response_model=dict)
 async def create_notification(
-    request: Request,
     notification: NotificationCreate,
     current_user=Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    logger.info("Raw request body: %s", await request.body())
     logger.info("Received notification data: %s", notification.dict())
     if current_user.role == "passenger":
         if not notification.trip_id:
             raise HTTPException(status_code=400, detail="trip_id is required for passenger notifications")
-        trip = db.query(TripModel).filter(TripModel.id == notification.trip_id).first()
-        if not trip or trip.driver_id is None:
-            raise HTTPException(status_code=404, detail="Trip not found")
-        driver = db.query(UserModel).filter(UserModel.id == trip.driver_id).first()
+        trip = db.query(TripModel).options(joinedload(TripModel.driver)).filter(TripModel.id == notification.trip_id).first()
+        if not trip or not trip.driver_id:
+            raise HTTPException(status_code=404, detail="Trip not found or no driver assigned")
+        driver = trip.driver
         if not driver or not driver.email:
             raise HTTPException(status_code=404, detail="Driver not found or email missing")
         new_notification = NotificationModel(
@@ -131,10 +134,9 @@ async def create_notification(
         passenger = db.query(UserModel).filter(UserModel.id == notification.passenger_id).first()
         if not passenger or not passenger.email:
             raise HTTPException(status_code=404, detail="Passenger not found or email missing")
-        if notification.trip_id:
-            trip = db.query(TripModel).filter(TripModel.id == notification.trip_id).first()
-            if not trip or trip.driver_id != current_user.id:
-                raise HTTPException(status_code=404, detail="Trip not found or not owned by driver")
+        trip = db.query(TripModel).options(joinedload(TripModel.driver)).filter(TripModel.id == notification.trip_id).first() if notification.trip_id else None
+        if notification.trip_id and (not trip or trip.driver_id != current_user.id):
+            raise HTTPException(status_code=404, detail="Trip not found or not owned by driver")
         new_notification = NotificationModel(
             passenger_id=notification.passenger_id,
             driver_id=current_user.id,
@@ -184,25 +186,29 @@ async def create_notification(
 @router.get("/", response_model=list[Notification])
 def get_notifications(
     current_user=Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    is_read: Optional[bool] = Query(None, description="Filter by read status")
 ):
     logger.info("Fetching notifications for user: %s (role: %s)", current_user.email, current_user.role)
+    query = db.query(NotificationModel).options(
+        joinedload(NotificationModel.trip),
+        joinedload(NotificationModel.driver),
+        joinedload(NotificationModel.passenger)
+    )
     if current_user.role == "admin":
-        notifications = db.query(NotificationModel).all()
+        if is_read is not None:
+            query = query.filter(NotificationModel.is_read == is_read)
     else:
-        notifications = db.query(NotificationModel).filter(
+        query = query.filter(
             (NotificationModel.driver_id == current_user.id) |
             (NotificationModel.passenger_id == current_user.id)
-        ).all()
+        )
+        if is_read is not None:
+            query = query.filter(NotificationModel.is_read == is_read)
 
+    notifications = query.all()
     if not notifications:
         logger.info("No notifications found for user: %s", current_user.email)
         return []
-
-    # Joindre les données du conducteur pour inclure son email
-    for notification in notifications:
-        if notification.driver_id:
-            driver = db.query(UserModel).filter(UserModel.id == notification.driver_id).first()
-            notification.driver_email = driver.email if driver else None
 
     return [Notification.from_orm(notification) for notification in notifications]

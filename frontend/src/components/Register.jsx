@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
-import bg from '/home/Minyar/covoiturage-app/frontend/src/assets/Background.png';
+import bg from '../assets/Background.png';
 import ReCAPTCHA from 'react-google-recaptcha';
 
 function Register({ setToken, setUserRole }) {
@@ -9,6 +9,7 @@ function Register({ setToken, setUserRole }) {
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('passenger');
   const [sexe, setSexe] = useState('');
+  const [photo, setPhoto] = useState(null);
   const [errors, setErrors] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [captchaVerified, setCaptchaVerified] = useState(false);
@@ -21,18 +22,9 @@ function Register({ setToken, setUserRole }) {
     setIsLoading(true);
 
     const newErrors = [];
-
-    if (!captchaVerified) {
-      newErrors.push('Please verify the reCAPTCHA');
-    }
-
-    if (!email.includes('@')) {
-      newErrors.push('Invalid email: must contain @');
-    }
-
-    if (password.length < 4) {
-      newErrors.push('Password must be at least 4 characters long');
-    }
+    if (!captchaVerified) newErrors.push('Please verify the reCAPTCHA');
+    if (!email.includes('@')) newErrors.push('Invalid email: must contain @');
+    if (password.length < 4) newErrors.push('Password must be at least 4 characters long');
 
     if (newErrors.length > 0) {
       setErrors(newErrors);
@@ -41,21 +33,22 @@ function Register({ setToken, setUserRole }) {
     }
 
     try {
-      const response = await api.post('/auth/register', 
-        new URLSearchParams({
-          email: email, 
-          password: encodeURIComponent(password),  
-          role: role,  
-          sexe: sexe, 
-          recaptcha_token: captchaToken
-        }),
-        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-      );
-      console.log('API response:', response.data); // Débogage
+      const formData = new FormData();
+      formData.append('email', email);
+      formData.append('password', password);
+      formData.append('role', role);
+      formData.append('sexe', sexe);
+      formData.append('recaptcha_token', captchaToken);
+      if (photo) formData.append('photo', photo);
+
+      console.log('Sending request to /auth/register with data:', Object.fromEntries(formData));
+      const response = await api.post('/auth/register', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+
       const { access_token } = response.data;
-      if (!access_token) {
-        throw new Error('No access token returned from registration');
-      }
+      if (!access_token) throw new Error('No access token returned from registration');
+      
       localStorage.setItem('token', access_token);
       localStorage.setItem('role', role);
       setToken(access_token);
@@ -73,7 +66,10 @@ function Register({ setToken, setUserRole }) {
   const onCaptchaChange = (value) => {
     setCaptchaVerified(!!value);
     setCaptchaToken(value);
-    console.log('reCAPTCHA value:', value); // Débogage
+  };
+
+  const handlePhotoChange = (e) => {
+    if (e.target.files && e.target.files[0]) setPhoto(e.target.files[0]);
   };
 
   return (
@@ -132,11 +128,10 @@ function Register({ setToken, setUserRole }) {
               >
                 <option value="passenger">Passenger</option>
                 <option value="driver">Driver</option>
-
               </select>
             </div>
             <div>
-              <label htmlFor="sexe" className="block text-gray-700 text-sm font-medium mb-1">Sexe</label>
+              <label htmlFor="sexe" className="block text-gray-700 text-sm font-medium mb-1">Gender</label>
               <select
                 id="sexe"
                 value={sexe}
@@ -149,23 +144,32 @@ function Register({ setToken, setUserRole }) {
                 <option value="female">Female</option>
               </select>
             </div>
-            <div className="mb-4">
-              <ReCAPTCHA
-                sitekey="6LdmmncrAAAAAA25r52V-YtCNO0WwGl4UrRMeaxj" 
-                onChange={onCaptchaChange}
+            <div>
+              <label htmlFor="photo" className="block text-gray-700 text-sm font-medium mb-1">Profile Photo (Optional)</label>
+              <input
+                id="photo"
+                type="file"
+                accept="image/*"
+                onChange={handlePhotoChange}
+                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
+              {photo && <div className="mt-2 text-sm text-green-600">Selected: {photo.name}</div>}
+            </div>
+            <div className="mb-4">
+              <ReCAPTCHA sitekey="6LdmmncrAAAAAA25r52V-YtCNO0WwGl4UrRMeaxj" onChange={onCaptchaChange} />
             </div>
             <button
               type="submit"
               disabled={isLoading || !captchaVerified}
-              className={`w-full py-2 px-4 rounded-md text-white font-medium ${isLoading || !captchaVerified ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
+              className={`w-full py-2 px-4 rounded-md text-white font-medium ${
+                isLoading || !captchaVerified ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
+              }`}
             >
               {isLoading ? 'Registering...' : 'Register'}
             </button>
           </form>
           <div className="mt-4 text-center text-sm text-gray-600">
-            Already have an account?{' '}
-            <a href="/login" className="text-blue-600 hover:underline">Login here</a>
+            Already have an account? <a href="/login" className="text-blue-600 hover:underline">Login here</a>
           </div>
         </div>
       </div>

@@ -8,8 +8,12 @@ import os
 from dotenv import load_dotenv
 import logging
 import re
+from fastapi import HTTPException
+import urllib.parse
 
 load_dotenv()
+
+# Configuration des logs
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -19,6 +23,11 @@ if not SQLALCHEMY_DATABASE_URL:
     raise ValueError("DATABASE_URL is not set in .env")
 if not re.match(r'^postgresql://', SQLALCHEMY_DATABASE_URL):
     raise ValueError("DATABASE_URL must start with 'postgresql://'")
+
+# Vérification de l'URL pour s'assurer qu'elle contient un utilisateur et un mot de passe
+parsed_url = urllib.parse.urlparse(SQLALCHEMY_DATABASE_URL)
+if not parsed_url.username or not parsed_url.password:
+    raise ValueError("DATABASE_URL must include a username and password")
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
@@ -40,7 +49,6 @@ class User(Base):
     created_at = Column(DateTime, server_default=func.now())
     photo_path = Column(String(255), nullable=True)
     
-    # Relations
     trips = relationship("Trip", back_populates="driver", cascade="all, delete-orphan")
     bookings = relationship("Booking", back_populates="passenger", cascade="all, delete-orphan")
     feedbacks = relationship("Feedback", back_populates="user", cascade="all, delete-orphan")
@@ -89,7 +97,7 @@ class Booking(Base):
     trip_id = Column(Integer, ForeignKey("trips.id", ondelete="CASCADE"), nullable=False)
     passenger_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     seats_booked = Column(Integer, nullable=False, default=1)
-    created_at = Column(DateTime, server_default=func.now())
+    created_at = Column(DateTime, server_default=func.now())  
     status = Column(String(20), default="confirmed")
 
     __table_args__ = (
@@ -145,7 +153,7 @@ class Notification(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     passenger_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    driver_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    driver_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)  
     trip_id = Column(Integer, ForeignKey("trips.id", ondelete="CASCADE"), nullable=True)
     message = Column(Text, nullable=False)
     created_at = Column(DateTime, server_default=func.now())
@@ -174,19 +182,31 @@ def get_db():
         logger.info("Database session started")
         yield db
     except Exception as e:
-        logger.error(f"Database error: {str(e)}")
-        db.rollback()
-        raise
+        logger.error(f"Database error occurred: {str(e)}")
+        if db.in_transaction():
+            db.rollback()
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
     finally:
         logger.info("Database session closed")
         db.close()
 
 def create_tables():
     """Crée toutes les tables dans la base de données"""
-    Base.metadata.create_all(bind=engine)
-    logger.info("Database tables created successfully")
+    try:
+        Base.metadata.create_all(bind=engine)
+        logger.info("Database tables created successfully")
+    except Exception as e:
+        logger.error(f"Failed to create database tables: {str(e)}")
+        raise
 
 def drop_tables():
     """Supprime toutes les tables de la base de données (pour les tests)"""
-    Base.metadata.drop_all(bind=engine)
-    logger.info("Database tables dropped successfully")
+    try:
+        Base.metadata.drop_all(bind=engine)
+        logger.info("Database tables dropped successfully")
+    except Exception as e:
+        logger.error(f"Failed to drop database tables: {str(e)}")
+        raise
+
+if __name__ == "__main__":
+    create_tables()

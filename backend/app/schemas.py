@@ -10,13 +10,12 @@ class UserRole(str, Enum):
     passenger = "passenger"
     admin = "admin"
 
-
 class UserBase(BaseModel):
     id: int
     email: str
     role: UserRole
     sexe: Optional[str] = None
-    photo_path: Optional[str] = None
+    photo_path: Optional[str] = None  
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -36,6 +35,16 @@ class User(UserBase):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+    
+class UserResponse(BaseModel):
+    id: int
+    email: str
+    role: UserRole
+    sexe: Optional[str] = None
+    photo_path: Optional[str] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 class TripStatus(str, Enum):
     planned = "planned"
@@ -52,7 +61,6 @@ class TripBase(BaseModel):
     car_type: Optional[str] = None
     description: Optional[str] = None
     return_date: Optional[datetime] = None
-    photo_path: Optional[str] = None
     status: TripStatus = TripStatus.planned
     sexe: Optional[str] = None
     custom_notification_message: Optional[str] = None
@@ -60,7 +68,16 @@ class TripBase(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 class TripCreate(TripBase):
-    pass 
+    departure_city: str
+    destination: str
+    date_time: datetime
+    available_seats: int
+    price: float
+    car_type: Optional[str] = None
+    description: Optional[str] = None
+    return_date: Optional[datetime] = None
+    sexe: Optional[str] = None
+    custom_notification_message: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -74,24 +91,30 @@ class Trip(TripCreate):
 
     model_config = ConfigDict(from_attributes=True)
 
+class PaginatedTripResponse(BaseModel):
+    """Modèle pour les réponses paginées des trips."""
+    results: List[Trip]
+    total: int
+
+    model_config = ConfigDict(from_attributes=True)
+
 class TripResponse(BaseModel):
     id: int
     departure_city: str
     destination: str
-    date_time: str
+    date_time: datetime  
     available_seats: int
     price: float
     driver_id: int
-    created_at: str
+    created_at: datetime  
     car_type: Optional[str] = None
     description: Optional[str] = None
-    return_date: Optional[str] = None
-    photo_path: Optional[str] = None
+    return_date: Optional[datetime] = None 
     status: str
     sexe: Optional[str] = None
     driver: Optional[dict] = None
-    bookings: list = []
-    feedbacks: list = []
+    bookings: List["Booking"] = []  
+    feedbacks: List["Feedback"] = []  
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -152,6 +175,7 @@ class Notification(NotificationCreate):
     driver_email: Optional[str] = None
     departure_city: Optional[str] = None  
     destination: Optional[str] = None
+
     model_config = ConfigDict(from_attributes=True)
 
 class FeedbackBase(BaseModel):
@@ -178,3 +202,5 @@ class Feedback(FeedbackCreate):
 # Reconstruction des modèles après toutes les définitions
 Trip.model_rebuild()
 User.model_rebuild()
+Booking.model_rebuild()
+Feedback.model_rebuild()

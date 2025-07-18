@@ -24,6 +24,7 @@ import api from '../services/api';
 import './AdminDashboard.css';
 import bg from '/home/Minyar/covoiturage-app/frontend/src/assets/Background.png';
 
+const API_BASE_URL = 'http://localhost:8000';
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8'];
 const defaultBg = 'https://via.placeholder.com/1920x1080';
 
@@ -54,7 +55,7 @@ const AdminDashboard = ({ token, onLogout, currentAdmin }) => {
           api.get('/admin/users', headers),
           api.get('/admin/stats', headers),
           api.get('/admin/trips', { ...headers, params }).catch((e) => ({ data: [] })),
-          api.get('/notifications/', headers),
+          api.get('/notifications/notifications/', headers).catch((e) => ({ data: [] })),
         ]);
 
         console.log('Trips data structure:', tripsRes.data); // Débogage
@@ -70,7 +71,7 @@ const AdminDashboard = ({ token, onLogout, currentAdmin }) => {
         setState((prev) => ({
           ...prev,
           loading: false,
-          error: err.response?.data?.detail || err.message,
+          error: err.response?.data?.detail || err.message || 'Failed to fetch data',
         }));
       }
     };
@@ -90,7 +91,7 @@ const AdminDashboard = ({ token, onLogout, currentAdmin }) => {
     } catch (err) {
       setState((prev) => ({
         ...prev,
-        error: err.response?.data?.detail || err.message,
+        error: err.response?.data?.detail || err.message || 'Failed to delete user',
       }));
     }
   };
@@ -206,7 +207,6 @@ const AdminDashboard = ({ token, onLogout, currentAdmin }) => {
               <Tab>Overview</Tab>
               <Tab>Users ({state.users.length})</Tab>
               <Tab>Trips ({state.trips.length})</Tab>
-
             </TabList>
 
             <TabPanel>
@@ -293,7 +293,7 @@ const AdminDashboard = ({ token, onLogout, currentAdmin }) => {
                     <th>Price</th>
                     <th>Car Type</th>
                     <th>Description</th>
-                    <th>driver Gender</th>
+                    <th>Driver Gender</th>
                     <th>Driver Email</th>
                     <th>Driver Photo</th>
                   </tr>
@@ -327,7 +327,7 @@ const AdminDashboard = ({ token, onLogout, currentAdmin }) => {
                         <td className="py-2 px-4 border">
                           {trip.driver_photo ? (
                             <img
-                              src={`/uploads/${trip.driver_photo}`}
+                              src={`${API_BASE_URL}/uploads/${trip.driver_photo}`}
                               alt="Driver"
                               className="w-12 h-12 object-cover rounded-full"
                               onError={(e) => {
@@ -345,8 +345,6 @@ const AdminDashboard = ({ token, onLogout, currentAdmin }) => {
                 </tbody>
               </table>
             </TabPanel>
-
-            
           </Tabs>
         </div>
       </div>

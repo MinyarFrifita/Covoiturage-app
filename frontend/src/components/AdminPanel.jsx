@@ -36,18 +36,18 @@ function AdminPanel({ currentAdmin }) {
           <div className="bg-gray-50 p-4 rounded-lg">
             <p className="mb-2">
               <span className="font-medium text-gray-600">Email:</span>{' '}
-              <span className="text-gray-800">{currentAdmin?.email || 'N/A'}</span>
+              <span className="text-gray-800">{currentAdmin?.email || 'Not available'}</span>
             </p>
             <p className="mb-2">
               <span className="font-medium text-gray-600">Role:</span>{' '}
-              <span className="text-gray-800">{currentAdmin?.role || 'N/A'}</span>
+              <span className="text-gray-800">{currentAdmin?.role || 'Not available'}</span>
             </p>
             <p>
               <span className="font-medium text-gray-600">Last Login:</span>{' '}
               <span className="text-gray-800">
                 {currentAdmin?.last_login
                   ? new Date(currentAdmin.last_login).toLocaleString()
-                  : 'N/A'}
+                  : 'Not available'}
               </span>
             </p>
           </div>
