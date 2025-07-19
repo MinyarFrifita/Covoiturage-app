@@ -2,3 +2,10 @@
 backend/.env
 frontend/.env
 backend/app/main.py
+__pycache__/
+*.pyc
+venv/
+**/venv/
+__pycache__/
+**/__pycache__/
+*.pyc
